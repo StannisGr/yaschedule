@@ -98,19 +98,18 @@ class YaSchedule:
 
     def __pagination_resolver(self, response: dict, **kwargs):
         """
-            Resolve pagination for api requests
+            Resolve pagination for api requests. 
+            Useful for schedule-on-station and query-nearest-station methods
             :param response: response of first request
             :param kwargs: params for requests
             :return: dict of data
-
-            Useful for schedule-on-station and query-nearest-station methods
         """
         if not kwargs.get("offset"):
             current_offset = step = response["pagination"]["limit"]
             total = response["pagination"]["total"]
             while current_offset < total:
                 payload = self.__get_payload(offset=current_offset, **kwargs)
-                i = self.__get_response(kwargs.get('api_method_url'), payload)
+                i = self.__get_response(kwargs.get("api_method_url"), payload)
                 response["schedule"].extend(i["schedule"])
                 current_offset += step
             del response["pagination"]
