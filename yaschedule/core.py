@@ -1,12 +1,12 @@
+import logging
 import datetime
 from requests_cache import CachedSession
 
 
 class YaSchedule:
+    base_url = "https://api.rasp.yandex.net/v3.0/"
 
-    base_url = 'https://api.rasp.yandex.net/v3.0/'
-
-    def __init__(self, token: str, lang='ru_RU') -> None:
+    def __init__(self, token: str, lang="ru_RU") -> None:
         """
         :param token: str
         :param lang: str lang codes info - https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
@@ -14,10 +14,11 @@ class YaSchedule:
         self.__token = token
         self.__lang = lang
         self.session = CachedSession(
-            cache_name = __name__ + '.cache',
-            allowable_codes = [200, 404],
-            ignored_parameters = ['apikey'],
+            cache_name=__name__ + ".cache",
+            allowable_codes=[200, 404],
+            ignored_parameters=["apikey"],
         )
+        self.__logger = logging.getLogger(__name__)
 
     def __get_payload(self, **kwargs) -> dict:
         """
@@ -25,17 +26,26 @@ class YaSchedule:
         :param kwargs:
         :return:
         """
-        payload = {'apikey': self.__token,
-                   'lang': self.__lang}
+        payload = {"apikey": self.__token, "lang": self.__lang}
         for key, value in kwargs.items():
             if value is not None:
-                key = key.replace('_', '', 1) if key.find('_', 0, 1) == 0 else key
+                key = key.replace("_", "", 1) if key.find("_", 0, 1) == 0 else key
                 payload[key] = value
         return payload
 
     def __get_response(self, api_method_url: str, payload: dict) -> dict:
-        request_url = f'{self.base_url}{api_method_url}/'
+        request_url = f"{self.base_url}{api_method_url}/"
         response = self.session.get(request_url, payload)
+        self.__logger.info(
+            "%s %s %s %sKB",
+            response.request.method,
+            response.request.url,
+            response.status_code,
+            round(len(response.content) / 1024, 2),
+        )
+        props = ("from_cache", "created_at", "expires", "is_expired")
+        msg = ", ".join([i + "=" + str(getattr(response, i)) for i in props])
+        self.__logger.info("Response(%s)", msg)
         # TODO: add HTTP '429 Too Many Requests' handler and other non-200 codes (and corresponding :raises doc)
         return response.json()
 
@@ -50,8 +60,7 @@ class YaSchedule:
         payload = self.__get_payload(**kwargs)
         return self.__get_response(api_method_url, payload)
 
-    def get_schedule(self, from_station: str, to_station: str,
-                     date: datetime.date = None, **kwargs) -> dict:
+    def get_schedule(self, from_station: str, to_station: str, date: datetime.date | None = None, **kwargs) -> dict:
         """
         Get all flights from <city, station> to <city, station>.
         API_INFO: https://yandex.ru/dev/rasp/doc/reference/schedule-point-point.html
@@ -63,12 +72,7 @@ class YaSchedule:
         :return: dict of data
         """
         api_method_url = "search"
-        payload = self.__get_payload(
-            _from=from_station,
-            _to=to_station,
-            _date=date,
-            **kwargs
-        )
+        payload = self.__get_payload(_from=from_station, _to=to_station, _date=date, **kwargs)
         return self.__get_response(api_method_url, payload)
 
     def get_station_schedule(self, station: str, **kwargs) -> dict:
@@ -80,8 +84,25 @@ class YaSchedule:
         :return: dict of data
         """
         api_method_url = "schedule"
-        payload = self.__get_payload(
-            _station=station,
-            **kwargs
+        payload = self.__get_payload(_station=station, **kwargs)
+        res = self.__get_response(api_method_url, payload)
+
+        num_requests_more = int(res["pagination"]["total"]) // int(res["pagination"]["limit"])
+
+        self.__logger.info(
+            "This is a paginated route, total: %s, more requests for full result: %s",
+            res["pagination"]["total"],
+            num_requests_more,
         )
-        return self.__get_response(api_method_url, payload)
+
+        if "offset" not in kwargs:
+            current_offset = step = res["pagination"]["limit"]
+            total = res["pagination"]["total"]
+            while current_offset < total:
+                payload = self.__get_payload(_station=station, offset=current_offset, **kwargs)
+                i = self.__get_response(api_method_url, payload)
+                res["schedule"].extend(i["schedule"])
+                current_offset += step
+            del res["pagination"]
+
+        return res
