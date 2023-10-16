@@ -1,4 +1,3 @@
-import typing as t
 import logging
 import datetime
 from requests_cache import CachedSession
@@ -91,18 +90,19 @@ class YaSchedule:
         num_requests_more = int(res["pagination"]["total"]) // int(res["pagination"]["limit"])
 
         self.__logger.info(
-            f"This is a paginated route, total: {res['pagination']['total']}, more requests for full result: {num_requests_more}",
+            f"This is a paginated route, total: {res['pagination']['total']},\
+             more requests for full result: {num_requests_more}",
         )
         res = self.__pagination_resolver(response=res, station=station, api_method_url=api_method_url, **kwargs)
         return res
 
     def __pagination_resolver(self, response: dict, **kwargs):
         """
-            Resolve pagination for api requests. 
-            Useful for schedule-on-station and query-nearest-station methods
-            :param response: response of first request
-            :param kwargs: params for requests
-            :return: dict of data
+        Resolve pagination for api requests.
+        Useful for schedule-on-station and query-nearest-station methods
+        :param response: response of first request
+        :param kwargs: params for requests
+        :return: dict of data
         """
         if not kwargs.get("offset"):
             current_offset = step = response["pagination"]["limit"]
